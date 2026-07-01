@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pressure-Volume Work Lab</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Atmospheric Thermodynamics</p>
+          <h1>Pressure-Volume Work Lab</h1>
+        </div>
+        <div class="top-actions">
+          <button id="pauseButton" class="secondary-button" type="button" aria-pressed="false">Pause</button>
+          <button id="resetButton" class="primary-button" type="button">Reset</button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Pressure-volume work simulation">
+        <section class="chart-panel" aria-label="p-α diagram">
+          <div class="panel-heading">
+            <div>
+              <h2>p-α diagram</h2>
+              <p class="axis-note">dry air, specific volume in m³/kg</p>
+            </div>
+            <button id="clearPathButton" class="secondary-button compact" type="button">Clear path</button>
+          </div>
+          <canvas id="plotCanvas" aria-label="Plot of p against specific volume"></canvas>
+          <div class="legend" aria-label="plot legend">
+            <span><i class="legend-swatch path"></i>trajectory</span>
+            <span><i class="legend-swatch iso"></i>isothermal</span>
+            <span><i class="legend-swatch adiabat"></i>adiabatic</span>
+          </div>
+        </section>
+
+        <section class="lab-panel" aria-label="piston simulation and controls">
+          <div class="piston-wrap">
+            <div class="piston-frame" aria-hidden="true">
+              <div id="gasRegion" class="gas-region"></div>
+              <div id="pistonShaft" class="piston-shaft"></div>
+              <div id="piston" class="piston"></div>
+              <div class="ambient-region"></div>
+              <div class="wall left-wall"></div>
+              <div class="wall top-wall"></div>
+              <div class="wall bottom-wall"></div>
+              <div class="right-wall right-wall-top"></div>
+              <div class="right-wall right-wall-bottom"></div>
+            </div>
+          </div>
+
+          <div class="readout-grid">
+            <div>
+              <span class="readout-label">Gas 1 T</span>
+              <strong id="tempReadout">15.0 °C</strong>
+            </div>
+            <div>
+              <span class="readout-label">Gas 1 p</span>
+              <strong id="pressureReadout">1000 hPa</strong>
+            </div>
+            <div>
+              <span class="readout-label">V</span>
+              <strong id="volumeReadout">1.000 m³</strong>
+            </div>
+            <div>
+              <span class="readout-label">α</span>
+              <strong id="alphaReadout">0.827 m³/kg</strong>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div class="control-row heat-row">
+              <button id="coolButton" class="thermal-button cool" type="button" aria-label="Cool gas 1">
+                <span class="ice-icon" aria-hidden="true"></span>
+                <span>Cool</span>
+              </button>
+              <button id="heatButton" class="thermal-button heat" type="button" aria-label="Heat gas 1">
+                <span class="flame-icon" aria-hidden="true"></span>
+                <span>Heat</span>
+              </button>
+            </div>
+
+            <div class="control-group">
+              <label class="group-label" for="ambientPressureValue">Ambient pressure</label>
+              <div class="stepper">
+                <button id="pressureDownButton" type="button" aria-label="Decrease ambient pressure">-</button>
+                <output id="ambientPressureValue" for="pressureDownButton pressureUpButton">1000 hPa</output>
+                <button id="pressureUpButton" type="button" aria-label="Increase ambient pressure">+</button>
+              </div>
+            </div>
+
+            <fieldset class="control-group mode-group">
+              <legend class="group-label">Piston thermal state</legend>
+              <div class="segmented">
+                <label>
+                  <input type="radio" name="thermalMode" value="insulated" checked>
+                  <span>Insulated</span>
+                </label>
+                <label>
+                  <input type="radio" name="thermalMode" value="conductive">
+                  <span>Conductive</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="energy-strip" aria-label="energy accounting">
+            <div>
+              <span>Q</span>
+              <strong id="heatReadout">0.00 kJ</strong>
+            </div>
+            <div>
+              <span>W by gas</span>
+              <strong id="workReadout">0.00 kJ</strong>
+            </div>
+            <div>
+              <span>Delta U</span>
+              <strong id="energyReadout">0.00 kJ</strong>
+            </div>
+            <div>
+              <span>m</span>
+              <strong id="massReadout">1.209 kg</strong>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

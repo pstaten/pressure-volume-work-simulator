@@ -63,7 +63,7 @@
             </div>
             <div>
               <span class="readout-label">V</span>
-              <strong id="volumeReadout">1.000 m³</strong>
+              <strong id="volumeReadout">0.500 m³</strong>
             </div>
             <div>
               <span class="readout-label">α</span>
@@ -93,15 +93,15 @@
             </div>
 
             <fieldset class="control-group mode-group">
-              <legend class="group-label">Piston thermal state</legend>
-              <div class="segmented">
+              <legend class="group-label">Piston state</legend>
+              <div class="checkbox-stack">
                 <label>
-                  <input type="radio" name="thermalMode" value="insulated" checked>
+                  <input id="insulatedCheckbox" type="checkbox" checked>
                   <span>Insulated</span>
                 </label>
                 <label>
-                  <input type="radio" name="thermalMode" value="conductive">
-                  <span>Conductive</span>
+                  <input id="lockedCheckbox" type="checkbox">
+                  <span>Locked</span>
                 </label>
               </div>
             </fieldset>
@@ -122,7 +122,7 @@
             </div>
             <div>
               <span>m</span>
-              <strong id="massReadout">1.209 kg</strong>
+              <strong id="massReadout">0.605 kg</strong>
             </div>
           </div>
         </section>

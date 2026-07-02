@@ -9,18 +9,18 @@ const initial = {
   ambientPressurePa: 100000,
   tempK: 288.15,
   ambientTempK: 288.15,
-  volume: 1.0
+  volume: 0.5
 };
 
 const config = {
   minAmbientPa: 50000,
   maxAmbientPa: 200000,
-  pressureStepPa: 5000,
+  pressureRatePaPerS: 35000,
   minTempK: 140,
   maxTempK: 580,
-  minVolume: 0.25,
+  minVolume: 0,
   maxVolume: 2.0,
-  heatPulseJ: 10000,
+  heatPowerW: 70000,
   conductionTauS: 3,
   pistonMobility: 1.2e-5,
   maxVolumeRate: 0.42,
@@ -35,7 +35,10 @@ const state = {
   tempK: initial.tempK,
   volume: initial.volume,
   ambientPressurePa: initial.ambientPressurePa,
-  thermalMode: "insulated",
+  insulated: true,
+  locked: false,
+  heatDirection: 0,
+  pressureDirection: 0,
   paused: false,
   time: 0,
   heatJ: 0,
@@ -64,7 +67,8 @@ const els = {
   reset: document.getElementById("resetButton"),
   clearPath: document.getElementById("clearPathButton"),
   pause: document.getElementById("pauseButton"),
-  thermalModes: Array.from(document.querySelectorAll("input[name='thermalMode']"))
+  insulated: document.getElementById("insulatedCheckbox"),
+  locked: document.getElementById("lockedCheckbox")
 };
 
 const plot = {
@@ -86,7 +90,7 @@ const pistonVisual = {
 };
 
 function pressurePa() {
-  return mass * Rd * state.tempK / state.volume;
+  return mass * Rd * state.tempK / Math.max(state.volume, 1e-6);
 }
 
 function specificVolume() {
@@ -108,30 +112,35 @@ function formatSignedKj(valueJ) {
   return `${sign}${valueKj.toFixed(2)} kJ`;
 }
 
+function interpolateColor(a, b, t) {
+  const boundedT = clamp(t, 0, 1);
+  const r = Math.round(a[0] + (b[0] - a[0]) * boundedT);
+  const g = Math.round(a[1] + (b[1] - a[1]) * boundedT);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * boundedT);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+
 function gasColor(tempK) {
+  const deepCold = [14, 57, 122];
   const cold = [71, 151, 205];
   const neutral = [246, 250, 252];
   const hot = [206, 73, 47];
+  const deepHot = [124, 16, 14];
   const pivot = initial.tempK;
-  let a;
-  let b;
-  let t;
 
-  if (tempK <= pivot) {
-    a = cold;
-    b = neutral;
-    t = (tempK - config.minTempK) / (pivot - config.minTempK);
-  } else {
-    a = neutral;
-    b = hot;
-    t = (tempK - pivot) / (config.maxTempK - pivot);
+  if (tempK < config.minTempK) {
+    return interpolateColor(cold, deepCold, (config.minTempK - tempK) / 90);
   }
 
-  t = clamp(t, 0, 1);
-  const r = Math.round(a[0] + (b[0] - a[0]) * t);
-  const g = Math.round(a[1] + (b[1] - a[1]) * t);
-  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
-  return `rgb(${r}, ${g}, ${bl})`;
+  if (tempK <= pivot) {
+    return interpolateColor(cold, neutral, (tempK - config.minTempK) / (pivot - config.minTempK));
+  }
+
+  if (tempK <= config.maxTempK) {
+    return interpolateColor(neutral, hot, (tempK - pivot) / (config.maxTempK - pivot));
+  }
+
+  return interpolateColor(hot, deepHot, (tempK - config.maxTempK) / 180);
 }
 
 function resetPath() {
@@ -145,34 +154,82 @@ function resetSimulation() {
   state.tempK = initial.tempK;
   state.volume = initial.volume;
   state.ambientPressurePa = initial.ambientPressurePa;
-  state.thermalMode = "insulated";
+  state.insulated = true;
+  state.locked = false;
+  state.heatDirection = 0;
+  state.pressureDirection = 0;
   state.paused = false;
   state.time = 0;
   state.heatJ = 0;
   state.workJ = 0;
 
-  els.thermalModes.forEach((input) => {
-    input.checked = input.value === "insulated";
-  });
-  els.heat.classList.remove("active");
-  els.cool.classList.remove("active");
+  els.insulated.checked = true;
+  els.locked.checked = false;
+  updateHeldButtonStates();
   els.pause.textContent = "Pause";
   els.pause.setAttribute("aria-pressed", "false");
   resetPath();
   updateUI();
 }
 
-function setAmbientPressure(nextPa) {
-  state.ambientPressurePa = clamp(nextPa, config.minAmbientPa, config.maxAmbientPa);
-  updateUI();
+function updateHeldButtonStates() {
+  els.heat.classList.toggle("active", state.heatDirection > 0);
+  els.cool.classList.toggle("active", state.heatDirection < 0);
+  els.pressureUp.classList.toggle("active", state.pressureDirection > 0);
+  els.pressureDown.classList.toggle("active", state.pressureDirection < 0);
 }
 
-function effectiveHeatRate() {
+function setHeatDirection(direction) {
+  state.heatDirection = direction;
+  updateHeldButtonStates();
+}
+
+function setPressureDirection(direction) {
+  state.pressureDirection = direction;
+  updateHeldButtonStates();
+}
+
+function updateAmbientPressure(dt) {
+  if (state.pressureDirection === 0) return;
+
+  const nextPressurePa = clamp(
+    state.ambientPressurePa + state.pressureDirection * config.pressureRatePaPerS * dt,
+    config.minAmbientPa,
+    config.maxAmbientPa
+  );
+
+  state.ambientPressurePa = nextPressurePa;
+
+  if (
+    (nextPressurePa <= config.minAmbientPa && state.pressureDirection < 0) ||
+    (nextPressurePa >= config.maxAmbientPa && state.pressureDirection > 0)
+  ) {
+    setPressureDirection(0);
+  }
+}
+
+function conductiveHeatRate() {
   let qdot = 0;
-  if (state.thermalMode === "conductive") {
+  if (!state.insulated) {
     qdot += mass * Cv * (initial.ambientTempK - state.tempK) / config.conductionTauS;
   }
   return qdot;
+}
+
+function manualHeatInputJ(dt, baselineTempK) {
+  const requestedHeatJ = state.heatDirection * config.heatPowerW * dt;
+
+  if (requestedHeatJ > 0) {
+    const roomToHeatJ = Math.max(0, mass * Cv * (config.maxTempK - baselineTempK));
+    return Math.min(requestedHeatJ, roomToHeatJ);
+  }
+
+  if (requestedHeatJ < 0) {
+    const roomToCoolJ = Math.max(0, mass * Cv * (baselineTempK - config.minTempK));
+    return -Math.min(-requestedHeatJ, roomToCoolJ);
+  }
+
+  return 0;
 }
 
 function recordPathPoint(force = false) {
@@ -185,36 +242,9 @@ function recordPathPoint(force = false) {
   }
 }
 
-const pulseTimers = new WeakMap();
-
-function flashPulseButton(button) {
-  const oldTimer = pulseTimers.get(button);
-  if (oldTimer) window.clearTimeout(oldTimer);
-  button.classList.add("active");
-  pulseTimers.set(button, window.setTimeout(() => {
-    button.classList.remove("active");
-    pulseTimers.delete(button);
-  }, 160));
-}
-
-function applyHeatPulse(sign, button) {
-  const requestedHeatJ = sign * config.heatPulseJ;
-  const currentTempK = state.tempK;
-  const nextTempK = clamp(
-    currentTempK + requestedHeatJ / (mass * Cv),
-    config.minTempK,
-    config.maxTempK
-  );
-  const actualHeatJ = mass * Cv * (nextTempK - currentTempK);
-
-  state.tempK = nextTempK;
-  state.heatJ += actualHeatJ;
-  flashPulseButton(button);
-  recordPathPoint(true);
-  updateUI();
-}
-
 function volumeRate(pGasPa) {
+  if (state.locked) return 0;
+
   const pressureDifference = pGasPa - state.ambientPressurePa;
   let dVdt = config.pistonMobility * pressureDifference;
   dVdt = clamp(dVdt, -config.maxVolumeRate, config.maxVolumeRate);
@@ -238,18 +268,13 @@ function integrate(dt) {
     dVdt = (nextVolume - state.volume) / dt;
   }
 
-  const qdotRequested = effectiveHeatRate();
   const workRate = pGasPa * dVdt;
-  const dTdt = (qdotRequested - workRate) / (mass * Cv);
-  let nextTempK = state.tempK + dTdt * dt;
-  let actualHeatJ = qdotRequested * dt;
+  const conductiveHeatJ = conductiveHeatRate() * dt;
   const actualWorkJ = workRate * dt;
-
-  if (nextTempK < config.minTempK || nextTempK > config.maxTempK) {
-    nextTempK = clamp(nextTempK, config.minTempK, config.maxTempK);
-    const actualDeltaUJ = mass * Cv * (nextTempK - state.tempK);
-    actualHeatJ = actualDeltaUJ + actualWorkJ;
-  }
+  const baselineTempK = state.tempK + (conductiveHeatJ - actualWorkJ) / (mass * Cv);
+  const manualHeatJ = manualHeatInputJ(dt, baselineTempK);
+  const actualHeatJ = conductiveHeatJ + manualHeatJ;
+  const nextTempK = baselineTempK + manualHeatJ / (mass * Cv);
 
   state.volume = nextVolume;
   state.tempK = nextTempK;
@@ -383,7 +408,7 @@ function drawPlot() {
 
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const xTicks = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
+  const xTicks = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
   xTicks.forEach((tick) => {
     if (tick < plot.alphaMin || tick > plot.alphaMax) return;
     const x = map.x(tick);
@@ -455,6 +480,8 @@ function frame(timestamp) {
   const elapsed = Math.min(0.08, (timestamp - lastTimestamp) / 1000);
   lastTimestamp = timestamp;
 
+  updateAmbientPressure(elapsed);
+
   if (!state.paused) {
     accumulator += elapsed;
     while (accumulator >= config.dt) {
@@ -467,26 +494,60 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 
-els.heat.addEventListener("click", () => {
-  applyHeatPulse(1, els.heat);
-});
+function bindHoldButton(button, start, stop) {
+  let keyboardActive = false;
 
-els.cool.addEventListener("click", () => {
-  applyHeatPulse(-1, els.cool);
-});
-
-els.pressureUp.addEventListener("click", () => {
-  setAmbientPressure(state.ambientPressurePa + config.pressureStepPa);
-});
-
-els.pressureDown.addEventListener("click", () => {
-  setAmbientPressure(state.ambientPressurePa - config.pressureStepPa);
-});
-
-els.thermalModes.forEach((input) => {
-  input.addEventListener("change", () => {
-    state.thermalMode = input.value;
+  button.addEventListener("pointerdown", (event) => {
+    if (button.disabled || (event.button !== undefined && event.button !== 0)) return;
+    event.preventDefault();
+    if (button.setPointerCapture) button.setPointerCapture(event.pointerId);
+    start();
   });
+
+  const stopPointerHold = (event) => {
+    event.preventDefault();
+    if (button.hasPointerCapture && button.hasPointerCapture(event.pointerId)) {
+      button.releasePointerCapture(event.pointerId);
+    }
+    stop();
+  };
+
+  button.addEventListener("pointerup", stopPointerHold);
+  button.addEventListener("pointercancel", stopPointerHold);
+  button.addEventListener("lostpointercapture", stop);
+
+  button.addEventListener("keydown", (event) => {
+    if (button.disabled || keyboardActive || (event.key !== " " && event.key !== "Enter")) return;
+    event.preventDefault();
+    keyboardActive = true;
+    start();
+  });
+
+  button.addEventListener("keyup", (event) => {
+    if (!keyboardActive || (event.key !== " " && event.key !== "Enter")) return;
+    event.preventDefault();
+    keyboardActive = false;
+    stop();
+  });
+
+  button.addEventListener("blur", () => {
+    keyboardActive = false;
+    stop();
+  });
+}
+
+bindHoldButton(els.heat, () => setHeatDirection(1), () => setHeatDirection(0));
+bindHoldButton(els.cool, () => setHeatDirection(-1), () => setHeatDirection(0));
+bindHoldButton(els.pressureUp, () => setPressureDirection(1), () => setPressureDirection(0));
+bindHoldButton(els.pressureDown, () => setPressureDirection(-1), () => setPressureDirection(0));
+
+els.insulated.addEventListener("change", () => {
+  state.insulated = els.insulated.checked;
+});
+
+els.locked.addEventListener("change", () => {
+  state.locked = els.locked.checked;
+  recordPathPoint(true);
 });
 
 els.reset.addEventListener("click", resetSimulation);

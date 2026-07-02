@@ -22,7 +22,7 @@ const config = {
   maxVolume: 2.0,
   heatPowerW: 70000,
   conductionTauS: 3,
-  pistonMobility: 1.2e-5,
+  pistonMobility: 6.0e-5,
   maxVolumeRate: 0.42,
   dt: 1 / 120,
   maxPathPoints: 4200
@@ -43,6 +43,7 @@ const state = {
   time: 0,
   heatJ: 0,
   workJ: 0,
+  referenceTempK: initial.tempK,
   path: []
 };
 
@@ -150,6 +151,18 @@ function resetPath() {
   }];
 }
 
+function resetAccountingReference() {
+  state.heatJ = 0;
+  state.workJ = 0;
+  state.referenceTempK = state.tempK;
+}
+
+function clearPathAndAccounting() {
+  resetPath();
+  resetAccountingReference();
+  updateUI();
+}
+
 function resetSimulation() {
   state.tempK = initial.tempK;
   state.volume = initial.volume;
@@ -160,8 +173,7 @@ function resetSimulation() {
   state.pressureDirection = 0;
   state.paused = false;
   state.time = 0;
-  state.heatJ = 0;
-  state.workJ = 0;
+  resetAccountingReference();
 
   els.insulated.checked = true;
   els.locked.checked = false;
@@ -290,7 +302,7 @@ function updateUI() {
   const alpha = specificVolume();
   const volumeProgress = clamp((state.volume - config.minVolume) / (config.maxVolume - config.minVolume), 0, 1);
   const pistonLeftPercent = pistonVisual.minPercent + volumeProgress * (pistonVisual.maxPercent - pistonVisual.minPercent);
-  const deltaU = mass * Cv * (state.tempK - initial.tempK);
+  const deltaU = mass * Cv * (state.tempK - state.referenceTempK);
 
   els.gas.style.width = `${pistonLeftPercent}%`;
   els.shaft.style.width = `calc(${pistonLeftPercent}% - 7px)`;
@@ -551,7 +563,7 @@ els.locked.addEventListener("change", () => {
 });
 
 els.reset.addEventListener("click", resetSimulation);
-els.clearPath.addEventListener("click", resetPath);
+els.clearPath.addEventListener("click", clearPathAndAccounting);
 els.pause.addEventListener("click", () => {
   state.paused = !state.paused;
   els.pause.textContent = state.paused ? "Resume" : "Pause";

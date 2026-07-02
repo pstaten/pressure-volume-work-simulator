@@ -18,6 +18,7 @@ Open `index.html` directly or serve this folder with any static file server.
 - The gas color scale preserves the original range from `140 K` to `580 K`, then darkens further if piston motion drives the gas colder or hotter.
 - Conductive piston mode applies Newtonian relaxation toward gas-2 temperature with a `3 s` e-folding time; checked `Insulated` mode removes that conductive exchange.
 - Checked `Locked` mode holds the piston fixed so gas-1 volume remains constant.
-- Damped piston: `dV/dt` is proportional to `p1 - p2`, with numerical rate limits and hard stops at `V = 0 m³` and `V = 2.0 m³`. The cylinder size is unchanged from the earlier draft.
+- Damped piston: `dV/dt` is proportional to `p1 - p2`, with mobility `6.0e-5 m³ s-1 Pa-1`, numerical rate limits, and hard stops at `V = 0 m³` and `V = 2.0 m³`. The cylinder size is unchanged from the earlier draft.
+- `Clear path` also resets `Q`, `W by gas`, and the displayed `Delta U` reference at the current state.
 
 The path plotted on the `p-α` diagram is the simulated gas-1 trajectory. Dashed references show the initial-state isothermal and reversible dry adiabatic curves.

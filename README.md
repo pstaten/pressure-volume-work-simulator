@@ -23,4 +23,4 @@ Open `index.html` directly or serve this folder with any static file server.
 - Boundary work is computed from the pressure-equilibrated process, so the visual piston motion does not add a separate piston energy sink/source to the gas-1 thermodynamics.
 - `Clear path` also resets `Q`, `W by gas`, and the displayed `Delta U` reference at the current state.
 
-The path plotted on the `p-α` diagram uses gas pressure. Dashed references show the initial-state isothermal and reversible dry adiabatic curves.
+The path plotted on the `p-α` diagram uses gas pressure. Dashed references show isothermal and reversible dry adiabatic curves for `15 °C` and `65 °C`, each anchored at `1000 hPa`.

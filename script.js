@@ -27,7 +27,22 @@ const config = {
 };
 
 const mass = initial.pressurePa * initial.volume / (Rd * initial.tempK);
-const alpha0 = initial.volume / mass;
+const referenceCurves = [
+  {
+    tempC: 15,
+    tempK: initial.tempK,
+    labelAlpha: 1.34,
+    isothermColor: "#157e6b",
+    adiabatColor: "#8c4b95"
+  },
+  {
+    tempC: 65,
+    tempK: kelvinOffset + 65,
+    labelAlpha: 1.15,
+    isothermColor: "#0f9a7f",
+    adiabatColor: "#a45daf"
+  }
+];
 
 const state = {
   tempK: initial.tempK,
@@ -474,8 +489,11 @@ function drawPlot() {
   ctx.rect(map.left, map.top, map.width, map.height);
   ctx.clip();
 
-  drawDashedCurve(ctx, map, "#157e6b", [9, 7], (alpha) => Rd * initial.tempK / alpha / 100);
-  drawDashedCurve(ctx, map, "#8c4b95", [3, 7], (alpha) => (initial.pressurePa / 100) * Math.pow(alpha0 / alpha, gamma));
+  referenceCurves.forEach((curve) => {
+    const alphaAt1000Hpa = Rd * curve.tempK / initial.pressurePa;
+    drawDashedCurve(ctx, map, curve.isothermColor, [9, 7], (alpha) => Rd * curve.tempK / alpha / 100);
+    drawDashedCurve(ctx, map, curve.adiabatColor, [3, 7], (alpha) => (initial.pressurePa / 100) * Math.pow(alphaAt1000Hpa / alpha, gamma));
+  });
 
   if (state.path.length > 1) {
     ctx.strokeStyle = "#15202b";
@@ -504,11 +522,20 @@ function drawPlot() {
   ctx.stroke();
   ctx.restore();
 
+  ctx.font = "11px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  referenceCurves.forEach((curve, index) => {
+    const x = map.x(curve.labelAlpha);
+    const y = map.y(Rd * curve.tempK / curve.labelAlpha / 100) + (index === 0 ? 8 : -18);
+    ctx.fillStyle = curve.isothermColor;
+    ctx.fillText(`${curve.tempC} °C`, x, y);
+  });
+
   ctx.fillStyle = "#5f6b76";
   ctx.font = "11px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText("T = 15 °C", map.x(1.34), map.y(Rd * initial.tempK / 1.34 / 100) + 8);
 }
 
 let accumulator = 0;

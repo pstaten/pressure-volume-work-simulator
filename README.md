@@ -11,14 +11,16 @@ Open `index.html` directly or serve this folder with any static file server.
 - Initial gas 1: `p = 1000 hPa`, `T = 288.15 K`, `V = 0.5 m³`, giving about `0.605 kg`.
 - Gas 2 reservoir: `T = 288.15 K`, adjustable pressure from `500` to `2000 hPa`.
 - Ambient pressure changes at `350 hPa s-1` while the pressure controls are held.
-- First-law integration over time: `m cv dT/dt = Qdot - p dV/dt`.
+- First-law integration over time conserves gas-1 mass and keeps the energy accounting tied to the plotted process.
 - `cv = 718 J kg-1 K-1`.
 - Heat and cool controls apply `+/- 70 kW` while held.
-- Manual heating stops at `580 K` and manual cooling stops at `140 K`; compression, expansion, and conduction are not temperature-clamped.
+- In insulated mode, manual heating stops at `580 K` and manual cooling stops at `140 K`; compression and expansion are not temperature-clamped.
 - The gas color scale preserves the original range from `140 K` to `580 K`, then darkens further if piston motion drives the gas colder or hotter.
-- Conductive piston mode applies Newtonian relaxation toward gas-2 temperature with a `3 s` e-folding time; checked `Insulated` mode removes that conductive exchange.
-- Checked `Locked` mode holds the piston fixed so gas-1 volume remains constant.
-- Damped piston: `dV/dt` is proportional to `p1 - p2`, with mobility `6.0e-5 m³ s-1 Pa-1`, numerical rate limits, and hard stops at `V = 0 m³` and `V = 2.0 m³`. The cylinder size is unchanged from the earlier draft.
+- If `Insulated` is unchecked, gas 1 instantly equilibrates to the ambient gas temperature. Any heat exchange needed to enforce that state is included in `Q`.
+- Barrier model: gas 1 is continuously updated to the pressure-equilibrium volume `V = m Rd T / p_ambient`, within the cylinder stops; the displayed piston position then animates toward that thermodynamic state.
+- Ambient-pressure adjustments with an insulated piston use the reversible adiabatic pressure-temperature relation.
+- There is no locked-piston mode, so students cannot store an off-equilibrium gas state and then release it into an ambiguous work path.
+- Boundary work is computed from the pressure-equilibrated process, so the visual piston motion does not add a separate piston energy sink/source to the gas-1 thermodynamics.
 - `Clear path` also resets `Q`, `W by gas`, and the displayed `Delta U` reference at the current state.
 
-The path plotted on the `p-α` diagram is the simulated gas-1 trajectory. Dashed references show the initial-state isothermal and reversible dry adiabatic curves.
+The path plotted on the `p-α` diagram uses gas pressure. Dashed references show the initial-state isothermal and reversible dry adiabatic curves.

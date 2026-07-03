@@ -21,9 +21,7 @@ const config = {
   minVolume: 0,
   maxVolume: 2.0,
   heatPowerW: 70000,
-  conductionTauS: 3,
-  pistonMobility: 6.0e-5,
-  maxVolumeRate: 0.42,
+  visualRelaxationRate: 9,
   dt: 1 / 120,
   maxPathPoints: 4200
 };
@@ -34,9 +32,9 @@ const alpha0 = initial.volume / mass;
 const state = {
   tempK: initial.tempK,
   volume: initial.volume,
+  visualVolume: initial.volume,
   ambientPressurePa: initial.ambientPressurePa,
   insulated: true,
-  locked: false,
   heatDirection: 0,
   pressureDirection: 0,
   paused: false,
@@ -68,8 +66,7 @@ const els = {
   reset: document.getElementById("resetButton"),
   clearPath: document.getElementById("clearPathButton"),
   pause: document.getElementById("pauseButton"),
-  insulated: document.getElementById("insulatedCheckbox"),
-  locked: document.getElementById("lockedCheckbox")
+  insulated: document.getElementById("insulatedCheckbox")
 };
 
 const plot = {
@@ -96,6 +93,11 @@ function pressurePa() {
 
 function specificVolume() {
   return state.volume / mass;
+}
+
+function equilibriumVolume(tempK = state.tempK, ambientPressurePa = state.ambientPressurePa) {
+  const targetVolume = mass * Rd * tempK / ambientPressurePa;
+  return clamp(targetVolume, config.minVolume, config.maxVolume);
 }
 
 function celsius(tempK) {
@@ -147,8 +149,16 @@ function gasColor(tempK) {
 function resetPath() {
   state.path = [{
     alpha: specificVolume(),
-    pressureHpa: pressurePa() / 100
+    pressureHpa: pathPressurePa() / 100
   }];
+}
+
+function pushPathPoint(alpha, pressureHpa) {
+  const last = state.path[state.path.length - 1];
+  if (!last || Math.abs(alpha - last.alpha) > 0.00001 || Math.abs(pressureHpa - last.pressureHpa) > 0.02) {
+    state.path.push({ alpha, pressureHpa });
+    if (state.path.length > config.maxPathPoints) state.path.shift();
+  }
 }
 
 function resetAccountingReference() {
@@ -163,12 +173,32 @@ function clearPathAndAccounting() {
   updateUI();
 }
 
+function applyInstantThermalEquilibrium() {
+  const oldTempK = state.tempK;
+  const oldVolume = state.volume;
+
+  pushPathPoint(specificVolume(), pathPressurePa() / 100);
+
+  const nextTempK = initial.ambientTempK;
+  const nextVolume = equilibriumVolume(nextTempK, state.ambientPressurePa);
+  const actualWorkJ = state.ambientPressurePa * (nextVolume - oldVolume);
+  const deltaUJ = mass * Cv * (nextTempK - oldTempK);
+  const actualHeatJ = deltaUJ + actualWorkJ;
+
+  state.tempK = nextTempK;
+  state.volume = nextVolume;
+  state.heatJ += actualHeatJ;
+  state.workJ += actualWorkJ;
+
+  pushPathPoint(specificVolume(), pathPressurePa() / 100);
+}
+
 function resetSimulation() {
   state.tempK = initial.tempK;
   state.volume = initial.volume;
+  state.visualVolume = initial.volume;
   state.ambientPressurePa = initial.ambientPressurePa;
   state.insulated = true;
-  state.locked = false;
   state.heatDirection = 0;
   state.pressureDirection = 0;
   state.paused = false;
@@ -176,7 +206,6 @@ function resetSimulation() {
   resetAccountingReference();
 
   els.insulated.checked = true;
-  els.locked.checked = false;
   updateHeldButtonStates();
   els.pause.textContent = "Pause";
   els.pause.setAttribute("aria-pressed", "false");
@@ -204,6 +233,8 @@ function setPressureDirection(direction) {
 function updateAmbientPressure(dt) {
   if (state.pressureDirection === 0) return;
 
+  const oldPressurePa = state.ambientPressurePa;
+
   const nextPressurePa = clamp(
     state.ambientPressurePa + state.pressureDirection * config.pressureRatePaPerS * dt,
     config.minAmbientPa,
@@ -218,26 +249,20 @@ function updateAmbientPressure(dt) {
   ) {
     setPressureDirection(0);
   }
+
+  return nextPressurePa - oldPressurePa;
 }
 
-function conductiveHeatRate() {
-  let qdot = 0;
-  if (!state.insulated) {
-    qdot += mass * Cv * (initial.ambientTempK - state.tempK) / config.conductionTauS;
-  }
-  return qdot;
-}
-
-function manualHeatInputJ(dt, baselineTempK) {
+function manualHeatInputJ(dt, baselineTempK, heatCapacity) {
   const requestedHeatJ = state.heatDirection * config.heatPowerW * dt;
 
   if (requestedHeatJ > 0) {
-    const roomToHeatJ = Math.max(0, mass * Cv * (config.maxTempK - baselineTempK));
+    const roomToHeatJ = Math.max(0, mass * heatCapacity * (config.maxTempK - baselineTempK));
     return Math.min(requestedHeatJ, roomToHeatJ);
   }
 
   if (requestedHeatJ < 0) {
-    const roomToCoolJ = Math.max(0, mass * Cv * (baselineTempK - config.minTempK));
+    const roomToCoolJ = Math.max(0, mass * heatCapacity * (baselineTempK - config.minTempK));
     return -Math.min(-requestedHeatJ, roomToCoolJ);
   }
 
@@ -247,46 +272,47 @@ function manualHeatInputJ(dt, baselineTempK) {
 function recordPathPoint(force = false) {
   const last = state.path[state.path.length - 1];
   const alpha = specificVolume();
-  const pressureHpa = pressurePa() / 100;
+  const pressureHpa = pathPressurePa() / 100;
   if (force || !last || Math.abs(alpha - last.alpha) > 0.0012 || Math.abs(pressureHpa - last.pressureHpa) > 3) {
-    state.path.push({ alpha, pressureHpa });
-    if (state.path.length > config.maxPathPoints) state.path.shift();
+    pushPathPoint(alpha, pressureHpa);
   }
 }
 
-function volumeRate(pGasPa) {
-  if (state.locked) return 0;
-
-  const pressureDifference = pGasPa - state.ambientPressurePa;
-  let dVdt = config.pistonMobility * pressureDifference;
-  dVdt = clamp(dVdt, -config.maxVolumeRate, config.maxVolumeRate);
-
-  if (state.volume <= config.minVolume && dVdt < 0) return 0;
-  if (state.volume >= config.maxVolume && dVdt > 0) return 0;
-  return dVdt;
+function pathPressurePa() {
+  return pressurePa();
 }
 
 function integrate(dt) {
-  const pGasPa = pressurePa();
-  let dVdt = volumeRate(pGasPa);
-  let nextVolume = state.volume + dVdt * dt;
+  const deltaAmbientPa = updateAmbientPressure(dt) || 0;
+  const oldTempK = state.tempK;
+  const oldVolume = state.volume;
+  let manualHeatJ;
+  let actualHeatJ;
+  let actualWorkJ;
+  let nextTempK;
+  let nextVolume;
 
-  if (nextVolume < config.minVolume) {
-    nextVolume = config.minVolume;
-    dVdt = (nextVolume - state.volume) / dt;
+  if (!state.insulated) {
+    nextTempK = initial.ambientTempK;
+    nextVolume = equilibriumVolume(nextTempK, state.ambientPressurePa);
+    actualWorkJ = mass * Rd * nextTempK * Math.log(Math.max(nextVolume, 1e-6) / Math.max(oldVolume, 1e-6));
+    actualHeatJ = mass * Cv * (nextTempK - oldTempK) + actualWorkJ;
+  } else {
+    const oldAmbientPressurePa = Math.max(state.ambientPressurePa - deltaAmbientPa, 1e-6);
+    const baselineTempK = oldTempK * Math.pow(state.ambientPressurePa / oldAmbientPressurePa, (gamma - 1) / gamma);
+    manualHeatJ = manualHeatInputJ(dt, baselineTempK, Cp);
+    actualHeatJ = manualHeatJ;
+    const unconstrainedTempK = baselineTempK + manualHeatJ / (mass * Cp);
+    const unconstrainedVolume = mass * Rd * unconstrainedTempK / state.ambientPressurePa;
+    nextVolume = clamp(unconstrainedVolume, config.minVolume, config.maxVolume);
+    if (Math.abs(nextVolume - unconstrainedVolume) > 1e-8) {
+      actualWorkJ = state.ambientPressurePa * (nextVolume - oldVolume);
+      nextTempK = oldTempK + (actualHeatJ - actualWorkJ) / (mass * Cv);
+    } else {
+      nextTempK = unconstrainedTempK;
+      actualWorkJ = actualHeatJ - mass * Cv * (nextTempK - oldTempK);
+    }
   }
-  if (nextVolume > config.maxVolume) {
-    nextVolume = config.maxVolume;
-    dVdt = (nextVolume - state.volume) / dt;
-  }
-
-  const workRate = pGasPa * dVdt;
-  const conductiveHeatJ = conductiveHeatRate() * dt;
-  const actualWorkJ = workRate * dt;
-  const baselineTempK = state.tempK + (conductiveHeatJ - actualWorkJ) / (mass * Cv);
-  const manualHeatJ = manualHeatInputJ(dt, baselineTempK);
-  const actualHeatJ = conductiveHeatJ + manualHeatJ;
-  const nextTempK = baselineTempK + manualHeatJ / (mass * Cv);
 
   state.volume = nextVolume;
   state.tempK = nextTempK;
@@ -300,7 +326,7 @@ function integrate(dt) {
 function updateUI() {
   const pGasPa = pressurePa();
   const alpha = specificVolume();
-  const volumeProgress = clamp((state.volume - config.minVolume) / (config.maxVolume - config.minVolume), 0, 1);
+  const volumeProgress = clamp((state.visualVolume - config.minVolume) / (config.maxVolume - config.minVolume), 0, 1);
   const pistonLeftPercent = pistonVisual.minPercent + volumeProgress * (pistonVisual.maxPercent - pistonVisual.minPercent);
   const deltaU = mass * Cv * (state.tempK - state.referenceTempK);
 
@@ -492,8 +518,6 @@ function frame(timestamp) {
   const elapsed = Math.min(0.08, (timestamp - lastTimestamp) / 1000);
   lastTimestamp = timestamp;
 
-  updateAmbientPressure(elapsed);
-
   if (!state.paused) {
     accumulator += elapsed;
     while (accumulator >= config.dt) {
@@ -501,6 +525,10 @@ function frame(timestamp) {
       accumulator -= config.dt;
     }
   }
+
+  const visualBlend = 1 - Math.exp(-config.visualRelaxationRate * elapsed);
+  state.visualVolume += (state.volume - state.visualVolume) * visualBlend;
+  if (Math.abs(state.visualVolume - state.volume) < 0.0005) state.visualVolume = state.volume;
 
   updateUI();
   requestAnimationFrame(frame);
@@ -554,12 +582,13 @@ bindHoldButton(els.pressureUp, () => setPressureDirection(1), () => setPressureD
 bindHoldButton(els.pressureDown, () => setPressureDirection(-1), () => setPressureDirection(0));
 
 els.insulated.addEventListener("change", () => {
+  const wasInsulated = state.insulated;
   state.insulated = els.insulated.checked;
-});
-
-els.locked.addEventListener("change", () => {
-  state.locked = els.locked.checked;
-  recordPathPoint(true);
+  if (wasInsulated && !state.insulated) {
+    applyInstantThermalEquilibrium();
+    recordPathPoint(true);
+    updateUI();
+  }
 });
 
 els.reset.addEventListener("click", resetSimulation);
